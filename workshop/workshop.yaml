@@ -1,9 +1,5 @@
-name: OpenShift 4 UPI Disconnected Deployment
+name: OpenShift 4.3 on Red Hat OpenStack 16
 
 modules:
     activate:
-    - overview
-    - prepare-environment
     - exercises
-    - cleanup
-    - solving-resetting

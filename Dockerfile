@@ -9,6 +9,11 @@ RUN rm -rf /tmp/src/.git* && \
     chgrp -R 0 /tmp/src && \
     chmod -R g+w /tmp/src
 
+COPY ./dashboard.pug /opt/workshop/gateway/views/dashboard.pug
+
+RUN chown 1001:0 /opt/workshop/gateway/views/dashboard.pug && \
+    chmod -R g+w /opt/workshop/gateway/views/dashboard.pug
+
 ENV TERMINAL_TAB=split
 
 USER 1001
