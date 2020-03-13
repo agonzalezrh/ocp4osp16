@@ -12,10 +12,14 @@ metadata:
   name: bookbag
 
 parameters:
+  - name: URL 
+    required: true
   - name: NAME
     required: true
     value: bookbag
   - name: IMAGE
+    required: true
+  - name: OSPVNCIMAGE
     required: true
   - name: IMAGE_PULL_POLICY
     required: true
@@ -99,14 +103,49 @@ objects:
                 - name: ODO_VERSION
                 - name: KUBECTL_VERSION
               image: ${IMAGE}
-              imagePullPolicy: ${IMAGE_PULL_POLICY}
+              imagePullPolicy: IfNotPresent
               resources: {}
               volumeMounts:
                 - mountPath: /var/run/workshop
                   name: shared
-                - mountPath: /var/run/workshop-vars
-                  name: workshopvars
           containers:
+            - resources:
+                limits:
+                  memory: 512Mi
+              readinessProbe:
+                httpGet:
+                  path: /health
+                  port: 8080
+                  scheme: HTTP
+                initialDelaySeconds: 3
+                timeoutSeconds: 3
+                periodSeconds: 10
+                successThreshold: 1
+                failureThreshold: 3
+              terminationMessagePath: /dev/termination-log
+              name: osp-vnc
+              livenessProbe:
+                httpGet:
+                  path: /health
+                  port: 8080
+                  scheme: HTTP
+                initialDelaySeconds: 30
+                timeoutSeconds: 3
+                periodSeconds: 10
+                successThreshold: 1
+                failureThreshold: 3
+              env:
+                - name: APP_CONFIG
+                - name: DJANGO_SECRET_KEY
+                  value: "1234"
+              ports:
+                - containerPort: 8080
+                  protocol: TCP
+              imagePullPolicy: IfNotPresent
+              terminationMessagePolicy: File
+              image: ${OSPVNCIMAGE}
+              imagePullPolicy: ${IMAGE_PULL_POLICY}
+    
             - name: terminal
               env:
                 - name: APPLICATION_NAME
@@ -177,6 +216,24 @@ objects:
         name: ${NAME}
       type: ClusterIP
 
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app: ${NAME}
+      name: ospvnc${NAME}
+    spec:
+      ports:
+      - name: 8080-tcp
+        port: 8080 
+        protocol: TCP
+        targetPort: 8080 
+      selector:
+        name: ${NAME}
+      type: ClusterIP
+
+
+
   - apiVersion: route.openshift.io/v1
     kind: Route
     metadata:
@@ -189,9 +246,30 @@ objects:
       tls:
         insecureEdgeTerminationPolicy: Redirect
         termination: edge
+      host: "${URL}"
       to:
         kind: Service
         name: ${NAME}
+
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      labels:
+        app: ${NAME}
+      name: redovn${NAME}
+    spec:
+      port:
+        targetPort: 8080-tcp
+      tls:
+        insecureEdgeTerminationPolicy: Redirect
+        termination: edge
+      host: "${URL}"
+      path: "/console"
+      to:
+        kind: Service
+        name: ospvnc${NAME}
+
+
 
   - apiVersion: v1
     data:
