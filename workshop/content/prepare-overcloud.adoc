@@ -19,12 +19,13 @@ In this section overcloud will be configured:
 === Configure network and subnet
 
 . Connect to your environment
++
 [%nowrap]
 ----
 [~] $ %student_ssh_command%
 ----
 +
-Your password is `%ssh_password%`
+Your password is `%student_ssh_password%`
 
 . Connect to `undercloud` (password is `r3dh4t1!` for user `stack`)
 +
