@@ -1,4 +1,18 @@
 modules:
-    exercises:
-        name: Lab Exercises
-
+    overview:
+        name: Workshop Overview
+        exit_sign: Prepare Overcloud 
+    prepare-overcloud:
+        name: Prepare Overcloud 
+        exit_sign: Install OpenShift
+    install-openshift:
+        name: Install OpenShift
+        exit_sign: Review Installation
+    review-installation:
+        name: Review Installation
+        exit_sign: Post Install Tasks
+    post-install-tasks:
+        name: Post Install Tasks
+        exit_sign: Manage OpenShift Cluster
+    manage-openshift:
+        name: Manage OpenShift Cluster

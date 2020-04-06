@@ -1,0 +1,220 @@
+:scrollbar:
+:data-uri:
+:toc2:
+:USER_GUID: %GUID%
+:USERNAME: %user%
+:CLUSTER: %cluster%
+
+== Scale Up the cluster
+
+. Check the current status
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc get machinesets -n openshift-machine-api
+----
+
++
+.Sample Output
+[%nowrap]
+----
+NAME                DESIRED   CURRENT   READY   AVAILABLE   AGE
+summit-brdjp-worker   1         1         1       1           48m
+----
+
+. Scale up the machine set to have 2 workers.
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ MS=$(oc get machinesets -n openshift-machine-api -o Name)
+(openshift) [stack@undercloud ~]$ oc scale $MS --replicas=2 -n openshift-machine-api
+----
++
+.Sample Output
+[%nowrap]
+----
+machineset.machine.openshift.io/summit-brdjp-worker scaled
+----
+
+. Check a new machine is created after scale up
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc get machine -n openshift-machine-api
+----
++
+.Sample Output
+[%nowrap]
+----
+NAME                        PHASE          TYPE        REGION   ZONE   AGE
+summit-psz4q-master-0       Running        m1.xlarge            nova   80m
+summit-psz4q-worker-dj85b   Running        m1.large             nova   71m
+summit-psz4q-worker-hq2hf   Provisioning                               8s
+----
+
+. After a while (around 7-8 minutes) it will appear the state ACTIVE and the type
++
+[%nowrap]
+----
+NAME                        PHASE     TYPE        REGION   ZONE   AGE
+summit-psz4q-master-0       Running	  m1.xlarge            nova   87m
+summit-psz4q-worker-dj85b   Running	  m1.large             nova   79m
+summit-psz4q-worker-hq2hf   Running   m1.large             nova   7m29s
+----
+
+. Check the VMs on OpenStack
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack server list --name worker
+----
+
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+-------------------------+--------+---------------------------------+-------+-----------+
+| ID                                   | Name                    | Status | Networks                        | Image | Flavor    |
++--------------------------------------+-------------------------+--------+---------------------------------+-------+-----------+
+| f5f1e52d-ccf4-4c62-8241-36d4f76f49ee | summit-psz4q-worker-d4j2z | ACTIVE | summit-psz4q-openshift=10.0.0.24 | rhcos | m1.xlarge |
+| 545860ed-e390-446a-a619-b899925bdc5a | summit-psz4q-worker-f9wbw | ACTIVE | summit-psz4q-openshift=10.0.0.16 | rhcos | m1.xlarge |
++--------------------------------------+-------------------------+--------+---------------------------------+-------+-----------+
+----
+
+
+
+
+. (Optional) Connect to the new worker and check the progress using `journalctl -f`
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ ssh core@10.0.0.16
+[core@summit-brdjp-worker-6csgn ~]$ sudo journalctl -f
+----
+
+After some minutes the new worker node will appear in `oc get nodes` output.
+
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ watch oc get nodes
+----
+
+.Sample Output
+[%nowrap]
+----
+NAME                      STATUS   ROLES    AGE     VERSION
+summit-brdjp-master-0       Ready    master   94m     v1.14.0+f62c70b01
+summit-brdjp-worker-6csgn   Ready    worker   4m43s   v1.14.0+f62c70b01
+summit-brdjp-worker-8pbzb   Ready    worker   85m     v1.14.0+f62c70b01
+----
+
+
+== Scale Down the cluster
+
+. Check current status
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc get machinesets -n openshift-machine-api
+----
++
+.Sample Output
+[%nowrap]
+----
+NAME                DESIRED   CURRENT   READY   AVAILABLE   AGE
+summit-brdjp-worker   2         2         2       2           97m
+----
+
+. Scale down to have only 1 worker
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc scale  $MS --replicas=1 -n openshift-machine-api
+----
++
+.Sample Output
+[%nowrap]
+----
+machineset.machine.openshift.io/summit-brdjp-worker scaled
+----
+
+. Get the list of machines (repeat the command till only appears 1 worker)
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ watch oc get machine -n openshift-machine-api
+----
++
+.Sample Output
+[%nowrap]
+----
+NAME                        PHASE      TYPE        REGION   ZONE   AGE
+summit-z2lph-master-0       Running    m1.xlarge            nova   89m
+summit-z2lph-worker-dj85b   Deleting   m1.large             nova   80m
+summit-z2lph-worker-hq2hf   Running    m1.large             nova   8m41s
+----
+
+. Notice the VM on OpenStack was removed
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack server list --name worker
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+-------------------------+--------+---------------------------------+-------+--------+
+| ID                                   | Name                    | Status | Networks                        | Image | Flavor |
++--------------------------------------+-------------------------+--------+---------------------------------+-------+--------+
+| c4708a42-e8c7-424c-a278-635a42e5b635 | summit-brdjp-worker-8pbzb | ACTIVE | summit-brdjp-openshift=10.0.0.25 | rhcos |        |
++--------------------------------------+-------------------------+--------+---------------------------------+-------+--------+
+----
+
+
+== Destroy Cluster
+
+In case of need, the `openshift-install` can remove all the components of OpenShift inside OpenStack. This command can be used if the installation failed or in case we just want to delete an installation.
+
+
+. Destroy the cluster
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ cd ~/openshift
+(openshift) [stack@undercloud openshift]$ time ./openshift-install --log-level=debug destroy cluster --dir summit
+----
++
+.Example Output
+[%nowrap]
+----
+DEBUG goroutine deleteSecurityGroups complete
+DEBUG Purging asset "Terraform Variables" from disk
+DEBUG Purging asset "Kubeconfig Admin Client" from disk
+DEBUG Purging asset "Kubeadmin Password" from disk
+DEBUG Purging asset "Certificate (journal-gatewayd)" from disk
+DEBUG Purging asset "Metadata" from disk
+DEBUG Purging asset "Cluster" from disk
+
+real	2m28.967s
+user	0m0.877s
+sys	0m0.192s
+----
+
+. Check the servers were deleted
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ openstack server list
+----
+
+. Check the working directory is empty
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ ls -l summit/
+total 0
+----
++
+[NOTE]
+It is a good practice to backup  the `install-config.yaml` outside of the working directory immediately after creating it.

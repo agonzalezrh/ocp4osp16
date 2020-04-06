@@ -1,0 +1,411 @@
+:scrollbar:
+:data-uri:
+:toc2:
+
+= OpenShift 4.3 on OpenStack 16.0 Installation Lab
+
+In this lab, you will install OpenShift 4.3 on Red Hat OpenStack 16.0
+
+== OpenShift 4.3 installation
+
+In this section preparation for the installation and the installation will be performed.
+
+=== Download OpenShift installer
+
+
+Latest installer binaries are available link:https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest[here].
+
+. Create a working directory
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ mkdir openshift
+(openshift) [stack@undercloud ~]$ cd openshift
+----
+
+. Download OpenShift 4.3 oc client from a local website
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ curl -O http://classroom.example.com/openshift-client-linux-4.3.1.tar.gz
+----
++
+.Sample Output
+[%nowrap]
+----
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 25.9M  100 25.9M    0     0  11.2M      0  0:00:02  0:00:02 --:--:-- 11.2M
+----
+
+. Uncompress and check version
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ sudo tar xvfz openshift-client-linux-4.3.1.tar.gz  -C /usr/bin/
+(openshift) [stack@undercloud openshift]$ oc version
+----
++
+.Expected Output
+[%nowrap]
+----
+Client Version: 4.3.1
+----
+
+=== Configure installation
+
+. Get `openshift` project id
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ export PROJID=$(openstack project show openshift -c id -f value)
+----
++
+
+. Generate `clouds.yaml` file (file used for authentication)
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ cat > clouds.yaml <<EOF
+clouds:
+  openstack:
+    auth:
+      auth_url: http://192.0.2.21:5000/v3
+      project_name: openshift
+      username: openshift_admin
+      password: r3dh4t1!
+      user_domain_name: Default
+      project_domain_name: Default
+      project_id: $PROJID
+EOF
+----
++
+
+. Create a `openshift-install` binary to use the disconnected installation.
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ echo '{"auths": { "quay.io": { "auth": "b3BlbnNoaWZ0LXJlbGVhc2UtZGV2K2pvc2Vnb256cmVkaGF0Y29tMWxtcmI4ZmdvdW02aTlxd2R2MWpwMHhwam1pOkk2TVczVVdVUzJPWk1XSlJQT1EyOFhYOFJBREZBWTBEUU9WOFIzVk8xRzM5NE5KODdHMlE4V0VGWE1JTTlMWE8=", "email": "" }}}' > quay.json
+(openshift) [stack@undercloud openshift]$ oc adm release extract -a quay.json --insecure  --command=openshift-install "classroom.example.com:5000/openshift4:4.3.1-x86_64"
+----
++
+[NOTE]
+This step is only required when we use a disconnected installation. For normal installation you can use the binary from link:https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest[here]
+
+. Ensure the binary was created correctly
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ ls -l openshift-install 
+-rwxr-xr-x. 1 stack stack 329097376 Feb  3 18:04 openshift-install
+----
+
+
+. Generate a install configuration
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ ./openshift-install create install-config --dir summit
+----
++
+
+.Options to select (using `arrows keys` to select the indicated option and press enter in each question)
++
+[%nowrap]
+----
+? SSH Public Key /home/stack/.ssh/id_rsa.pub
+? Platform openstack
+? Cloud openstack
+? ExternalNetwork public
+? APIFloatingIPAddress 192.0.2.70
+? FlavorName m1.xlarge
+? Base Domain example.com
+? Cluster Name summit
+? Pull Secret {"auths": { "quay.io": { "auth": "Y29yZW9zK3RlYzJfaWZidWdsa2VndmF0aXJyemlqZGMybnJ5ZzpWRVM0SVA0TjdSTjNROUUwMFA1Rk9NMjdSQUZNM1lIRjRYSzQ2UlJBTTFZQVdZWTdLOUFIQlM1OVBQVjhEVlla", "email": "" }, "registry.redhat.io": {"auth": "NjM0MDA1NnxvY3A0LW9zcDE2OmV5SmhiR2NpT2lKU1V6VXhNaUo5LmV5SnpkV0lpT2lJNE9EVXhNemcyTjJRek56TTBaV1poT1dZd05HUTBNMlptWlRKbFptUTRNaUo5LnZtMS15WnE1T1hYSmxrT18zMlhlTVdISGRaWHpUS1F5VTFuVXNWbm9vUzVxSjB5cWl5blVJZlpnOEZMTWR6bEgwb0lNU09ZR0p2YkdtM0kzdjkzZjBLQTBsSjNTcmZiX2Q5Yl9JWjVfb0dydTd6QmVnRzR0NWllRmd2T255YzN0a1Uxb2ZPMzY5VWVYNGxfdFU0RXZDdlNDYUV5S3NUZGI3RzlaN19vUmtmLWpmQnVZWl9TdjZ3WmFuUmszREtEckxweTB1T1VOUUFVYXVTbEgtTV9UTTNKZUUydTRfUVlHaTY4X01kb2ZZaUpnSE92UFJOb20tYWJ2bEFzaG8zTEFlVXlJQlNwbW5rYmNMSGhnMXM3REhOaWttZFgxdThLTGdYQTgzS1VkRW9JYW1zREgwTmxDdkp6RlQ1Ym4zX0VSYk1GMW02ODd2OFNmeE1RSGR1dWwxdDVNa2JMZU1KYThFb0ZLSmdoRUZiNGlVcWZmZmJpTUF0QXhhLVN1dV9aUWs1eW10WWFEbW1uQlp2eXA0c2VGS0FzNW5xYUtrdS1MenRYVEE5c1VKc0l1YVpVTDFwSmVIOElyblRJN2R0dGgySlpYTm8wM3c5Q0ZlVWtub29hSUtIN0k0MXc2MlFGQjZkMkNJeENjR0lHRXpBV3VQWEotX1BGR1FDRmp5M0k0alZvYnRlRFVHYmJvTlNmYk95dmU3U1ZISWY4N21TMjJZZmpZVEtwLTd1eXpSNXB0STBUVDdMVHhiei16Y0VYOVc3b2EySHZVNThPR2dqVTRsRXhleHhNc0Jqdnp4VTJxR19RYUE3SUhtQTcweDZiRlRSemFkd0tZaFg3NEN6U2JOb1NXdmV0S1RvRnhXdnloQnNyWnZoektHeEZrckctT3V3TzhoN0NkdnRv", "email": "6340056|ocp43-osp16"}}}
+----
++
+[NOTE]
+For this lab you can use this `Pull Secret`, for other environments you can generate your own using `https://try.openshift.com` website.
+
+
+. Check the `install-config.yaml` generated
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ cat ./summit/install-config.yaml
+----
++
+
+.Expected Output
++
+[source,yaml]
+----
+apiVersion: v1
+baseDomain: example.com
+compute:
+- hyperthreading: Enabled
+  name: worker
+  platform: {}
+  replicas: 3
+controlPlane:
+  hyperthreading: Enabled
+  name: master
+  platform: {}
+  replicas: 3
+metadata:
+  creationTimestamp: null
+  name: summit
+networking:
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  machineCIDR: 10.0.0.0/16
+  networkType: OpenShiftSDN
+  serviceNetwork:
+  - 172.30.0.0/16
+platform:
+  openstack:
+    cloud: openstack
+    computeFlavor: m1.xlarge
+    externalDNS: null
+    externalNetwork: public
+    lbFloatingIP: 192.0.2.88
+    octaviaSupport: "0"
+    region: ""
+    trunkSupport: "1"
+publish: External
+pullSecret: '{"auths": { "quay.io": { "auth": "Y29yZW9zK3RlYzJfaWZidWdsa2VndmF0aXJyemlqZGMybnJ5ZzpWRVM0SVA0TjdSTjNROUUwMFA1Rk9NMjdSQUZNM1lIRjRYSzQ2UlJBTTFZQVdZWTdLOUFIQlM1OVBQVjhEVlla",
+  "email": "" }, "registry.redhat.io": {"auth": "NjM0MDA1NnxvY3A0LW9zcDE2OmV5SmhiR2NpT2lKU1V6VXhNaUo5LmV5SnpkV0lpT2lJNE9EVXhNemcyTjJRek56TTBaV1poT1dZd05HUTBNMlptWlRKbFptUTRNaUo5LnZtMS15WnE1T1hYSmxrT18zMlhlTVdISGRaWHpUS1F5VTFuVXNWbm9vUzVxSjB5cWl5blVJZlpnOEZMTWR6bEgwb0lNU09ZR0p2YkdtM0kzdjkzZjBLQTBsSjNTcmZiX2Q5Yl9JWjVfb0dydTd6QmVnRzR0NWllRmd2T255YzN0a1Uxb2ZPMzY5VWVYNGxfdFU0RXZDdlNDYUV5S3NUZGI3RzlaN19vUmtmLWpmQnVZWl9TdjZ3WmFuUmszREtEckxweTB1T1VOUUFVYXVTbEgtTV9UTTNKZUUydTRfUVlHaTY4X01kb2ZZaUpnSE92UFJOb20tYWJ2bEFzaG8zTEFlVXlJQlNwbW5rYmNMSGhnMXM3REhOaWttZFgxdThLTGdYQTgzS1VkRW9JYW1zREgwTmxDdkp6RlQ1Ym4zX0VSYk1GMW02ODd2OFNmeE1RSGR1dWwxdDVNa2JMZU1KYThFb0ZLSmdoRUZiNGlVcWZmZmJpTUF0QXhhLVN1dV9aUWs1eW10WWFEbW1uQlp2eXA0c2VGS0FzNW5xYUtrdS1MenRYVEE5c1VKc0l1YVpVTDFwSmVIOElyblRJN2R0dGgySlpYTm8wM3c5Q0ZlVWtub29hSUtIN0k0MXc2MlFGQjZkMkNJeENjR0lHRXpBV3VQWEotX1BGR1FDRmp5M0k0alZvYnRlRFVHYmJvTlNmYk95dmU3U1ZISWY4N21TMjJZZmpZVEtwLTd1eXpSNXB0STBUVDdMVHhiei16Y0VYOVc3b2EySHZVNThPR2dqVTRsRXhleHhNc0Jqdnp4VTJxR19RYUE3SUhtQTcweDZiRlRSemFkd0tZaFg3NEN6U2JOb1NXdmV0S1RvRnhXdnloQnNyWnZoektHeEZrckctT3V3TzhoN0NkdnRv",
+  "email": "6340056|ocp43-osp16"}}}'
+sshKey: |
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQClVxORiGBXlpI0fy7DBrJgreQWruKbZ2yOD04XL0GrNmbIEQZZb0A2LI07ieVw89IyH1MuGvCfeebsXwoOY7PyHzvjKZVL6hpZa5exgoIaxlvbKqiUKpjNr3CK7jjOHu6ZkDYb0EUaJ+tOAtsNJnrx6eJnn5w8ACVfna7N1Tqpdw== root@undercloud.example.com
+----
++
+
+. Reduce the cluster to use only one controlPlane and compute.
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ sed -i 's/replicas: 3/replicas: 1/' ./summit/install-config.yaml
+----
++
+
+. Change the flavor type for the compute (worker) nodes to use `m1.large`
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ sed -i '6s/.*/  platform: {"openstack": {"type": "m1.large"}}/' ./summit/install-config.yaml
+----
++
+
+. Review the changes
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ head -7 ./summit/install-config.yaml
+----
++
+
+.Sample Output
+[%nowrap]
+----
+apiVersion: v1
+baseDomain: example.com
+compute:
+- hyperthreading: Enabled
+  name: worker
+  platform: {"openstack": {"type": "m1.large"}}
+  replicas: 1
+----
++
+
+
+. Specify where the repository for the mirrored images.
++
+The lab's image registry have already synchronized the images for OpenShift 4.3, but in this task you will run the commands to get the configuration required for the `install-config.yaml`
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ export LOCAL_REGISTRY=classroom.example.com:5000
+(openshift) [stack@undercloud openshift]$ export LOCAL_REPOSITORY='openshift4'
+(openshift) [stack@undercloud openshift]$ export RELEASE_NAME="ocp-release"
+(openshift) [stack@undercloud openshift]$ export OCP_RELEASE=4.3.1-x86_64
+(openshift) [stack@undercloud openshift]$ export PRODUCT_REPO='openshift-release-dev'
+(openshift) [stack@undercloud openshift]$ oc adm release mirror -a quay.json    --insecure=true  --from=quay.io/${PRODUCT_REPO}/${RELEASE_NAME}:4.3.1-x86_64      --to=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY}      --to-release-image=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY}:${OCP_RELEASE} --dry-run
+----
++
+
+.Sample Output
+[%nowrap]
+----
+info: Mirroring 101 images to classroom.example.com:5000/openshift4 ...
+classroom.example.com:5000/
+  openshift4
+<<OMITTED>>
+To use the new mirrored repository to install, add the following section to the install-config.yaml:
+
+imageContentSources:
+- mirrors:
+  - classroom.example.com:5000/openshift4
+  source: quay.io/openshift-release-dev/ocp-release
+- mirrors:
+  - classroom.example.com:5000/openshift4
+  source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+<<OMITTED>>
+----
+
+. Add `imageContentSources` section to the `install-config.yaml` file
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ cat >> summit/install-config.yaml <<EOF
+imageContentSources:
+- mirrors:
+  - classroom.example.com:5000/openshift4
+  source: quay.io/openshift-release-dev/ocp-release
+- mirrors:
+  - classroom.example.com:5000/openshift4
+  source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+EOF
+----
+
+. Trust SSL self-signed certitification
++
+Image registry is configured with a self-signed certification, we can add it as trusted on section `additionalTrustBundle`
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ cat >> summit/install-config.yaml <<\EOF
+additionalTrustBundle: |
+  -----BEGIN CERTIFICATE-----
+  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
+  -----END CERTIFICATE-----
+EOF
+----
+
+. (Optional) Generate `ignition` files
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ openshift-install create ignition-configs --dir summit
+(openshift) [stack@undercloud openshift]$ ls ./summit/*.ign
+summit/bootstrap.ign  summit/master.ign  summit/worker.ign
+----
++
+[NOTE]
+Ignition is a provisioning utility designed specifically for *CoreOS Container Linux*.
++
+[NOTE]
+At the the most basic level, it is a tool for manipulating disks during early boot. This includes partitioning disks, formatting partitions, writing files (regular files, systemd units, networkd units, etc.), and configuring users. On first boot, Ignition reads its configuration from a source-of-truth (remote URL, network metadata service, hypervisor bridge, etc.) and applies the configuration.
+
+. (Optional) Generate Kubernetes `manifests` files
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ openshift-install create manifests  --dir ./summit
+INFO Consuming "Master Ignition Config" from target directory
+INFO Consuming "Worker Ignition Config" from target directory
+----
++
+
+.. Review the files
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ ls ./summit/manifests/
+----
++
+
+.Sample Output
+[%nowrap]
+----
+04-openshift-machine-config-operator.yaml  cluster-network-01-crd.yml       etcd-client-secret.yaml                etcd-namespace.yaml                 machine-config-server-tls-secret.yaml
+cloud-provider-config.yaml                 cluster-network-02-config.yml    etcd-host-service-endpoints.yaml       etcd-service.yaml                   openshift-config-secret-pull-secret.yaml
+cluster-config.yaml                        cluster-proxy-01-config.yaml     etcd-host-service.yaml                 etcd-serving-ca-configmap.yaml
+cluster-dns-02-config.yml                  cluster-scheduler-02-config.yml  etcd-metric-client-secret.yaml         etcd-signer-secret.yaml
+cluster-infrastructure-02-config.yml       cvo-overrides.yaml               etcd-metric-serving-ca-configmap.yaml  kube-cloud-config.yaml
+cluster-ingress-02-config.yml              etcd-ca-bundle-configmap.yaml    etcd-metric-signer-secret.yaml         kube-system-configmap-root-ca.yaml
+----
++
+
+. Configure where RHCOS image is hosted.
++
+By default on `Red Hat OpenShift 4.3` Red Hat Core OS image for OpenStack is downloaded automatically and uploaded to Glance. As in this lab we are simulating a disconnected environment, we should override the default location
++
+
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ export OPENSHIFT_INSTALL_OS_IMAGE_OVERRIDE=http://classroom.example.com/rhcos-43.qcow2 
+----
+
+
+. Run installer (creating first cluster installation working directory)
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ time ./openshift-install --log-level=debug create cluster --dir summit
+----
++
+
+.Sample Output
+[%nowrap]
+----
+DEBUG OpenShift Installer unreleased-master-1199-g06474dd31b58a4e4299473d41a4ab85cd488ebfc
+DEBUG Built from commit 06474dd31b58a4e4299473d41a4ab85cd488ebfc
+DEBUG Fetching "Terraform Variables"...
+DEBUG Loading "Terraform Variables"...
+DEBUG   Loading "Cluster ID"...
+DEBUG     Loading "Install Config"...
+DEBUG       Loading "SSH Key"...
+DEBUG       Loading "Base Domain"...
+DEBUG         Loading "Platform"...
+DEBUG       Loading "Cluster Name"...
+DEBUG         Loading "Base Domain"...
+DEBUG       Loading "Pull Secret"...
+DEBUG       Loading "Platform"...
+DEBUG     Using "Install Config" loaded from target directory
+DEBUG   Loading "Install Config"...
+DEBUG   Loading "Image"...
+DEBUG     Loading "Install Config"...
+DEBUG   Loading "Bootstrap Ignition Config"...
+DEBUG     Loading "Install Config"...
+DEBUG     Loading "Kubeconfig Admin Client"...
+<<OMITTED>>
+----
++
+[NOTE]
+Installation will take around 40 minutes. During the installation process, go to the next section to review the installation process.
+
+

@@ -1,0 +1,635 @@
+:scrollbar:
+:data-uri:
+:toc2:
+:USER_GUID: %GUID%
+:USERNAME: %user%
+:CLUSTER: %cluster%
+
+== OpenShift 4.3 installation
+
+In this section preparation for the installation and the installation will be performed.
+
+=== Review installation process
+
+Wait till the installer shows the following messsage
+[%nowrap]
+----
+INFO Waiting up to 1h0m0s for the Kubernetes API at https://api.summit.example.com:6443...
+DEBUG Still waiting for the Kubernetes API: the server could not find the requested resource
+----
+
+Last message indicates the master VM is sarted and is doing the bootstrap process..
+
+
+Open a new session to `undercloud` server.
+
+. Review created networks during installation
++
+[%nowrap]
+----
+
+(openshift) [stack@undercloud ~]$ openstack network list 
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+----------------------+--------------------------------------+
+| ID                                   | Name                 | Subnets                              |
++--------------------------------------+----------------------+--------------------------------------+
+| 41c71dd5-6f24-4de1-aea3-7cf2ddccbeed | public               | d92f326f-48f1-4a57-9439-b58e69af7727 |
+| 83e4f7b8-2d2a-44f7-9a3c-26698d698726 | summit-dtx69-openshift | c9ac1bae-e44c-41e3-84b6-33991fa39ebe |
++--------------------------------------+----------------------+--------------------------------------+
+----
+
+. Review created subnet during installation
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack subnet list
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+------------------+--------------------------------------+--------------+
+| ID                                   | Name             | Network                              | Subnet       |
++--------------------------------------+------------------+--------------------------------------+--------------+
+| d92f326f-48f1-4a57-9439-b58e69af7727 | public_subnet    | 41c71dd5-6f24-4de1-aea3-7cf2ddccbeed | 192.0.2.0/24 |
+| c9ac1bae-e44c-41e3-84b6-33991fa39ebe | summit-dtx69-nodes | 83e4f7b8-2d2a-44f7-9a3c-26698d698726 | 10.0.0.0/16 |
++--------------------------------------+------------------+--------------------------------------+--------------+
+----
+
+. Review the servers created
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack server list
+----
++
+[%nowrap]
+----
++--------------------------------------+----------------------+--------+----------------------------------------------+-------+-----------+
+| ID                                   | Name                 | Status | Networks                                     | Image | Flavor    |
++--------------------------------------+----------------------+--------+----------------------------------------------+-------+-----------+
+| a438ee52-66dc-4612-83ae-e3e09ee14df8 | summit-dtx69-master-0  | ACTIVE | summit-dtx69-openshift=10.0.0.19              | rhcos | m1.xlarge |
+| 0e05fa34-3bf7-4089-a291-b2cb2c75c9be | summit-dtx69-bootstrap | ACTIVE | summit-dtx69-openshift=10.0.0.28, 192.0.2.68 | rhcos | m1.xlarge |
++--------------------------------------+----------------------+--------+----------------------------------------------+-------+-----------+
+----
++
+[NOTE]
+Notice one temporary Floating IP is created on the bootstrap node. This floating IP will be released automatically after the bootstrap node finishes.
+
+. List the security groups created
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack security group list
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+-------------------+------------------------+----------------------------------+
+| ID                                   | Name              | Description            | Project                          |
++--------------------------------------+-------------------+------------------------+----------------------------------+
+| 79745641-682d-449d-b1e0-903ec789fc91 | summit-dtx69-worker |                        | 31cd4d29cf6c479d9a72784ff4e4ad3c |
+| b560d600-c35a-4e42-8ca3-ebbd42af049a | summit-dtx69-master |                        | 31cd4d29cf6c479d9a72784ff4e4ad3c |
+| c9112863-5612-472a-99d2-43ea867e5176 | default           | Default security group | 31cd4d29cf6c479d9a72784ff4e4ad3c |
++--------------------------------------+-------------------+------------------------+----------------------------------+
+----
++
+[NOTE]
+You can explore the rules created using the command `openstack security group rule list SGNAME`
+
+. List the trunk ports
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack network trunk list
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+---------------------------+--------------------------------------+-------------+
+| ID                                   | Name                      | Parent Port                          | Description |
++--------------------------------------+---------------------------+--------------------------------------+-------------+
+| a2986abe-19de-4585-a715-c50b6f581a61 | summit-dtx69-master-trunk-0 | de3cd481-28d5-42f8-b0ba-c10127a0e034 |             |
++--------------------------------------+---------------------------+--------------------------------------+-------------+
+----
+
+. Show the trunk parent port
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ for port in $(openstack network trunk list -c "Parent Port" -f value) ; do openstack port show $port ; done
+----
++
+.Sample Port
++
+[%nowrap]
+----
++-----------------------+--------------------------------------------------------------------------------------------------+
+| Field                 | Value                                                                                            |
++-----------------------+--------------------------------------------------------------------------------------------------+
+| admin_state_up        | UP                                                                                               |
+| allowed_address_pairs | ip_address='10.0.0.5', mac_address='fa:16:3e:44:bc:6e'                                          |
+|                       | ip_address='10.0.0.6', mac_address='fa:16:3e:44:bc:6e'                                          |
+|                       | ip_address='10.0.0.7', mac_address='fa:16:3e:44:bc:6e'                                          |
+| binding_host_id       | overcloud-compute-0.localdomain                                                                  |
+| binding_profile       |                                                                                                  |
+| binding_vif_details   | bridge_name='tbr-a2986abe-1', datapath_type='system', ovs_hybrid_plug='True', port_filter='True' |
+| binding_vif_type      | ovs                                                                                              |
+| binding_vnic_type     | normal                                                                                           |
+| created_at            | 2019-08-27T14:48:52Z                                                                             |
+| data_plane_status     | None                                                                                             |
+| description           |                                                                                                  |
+| device_id             | a438ee52-66dc-4612-83ae-e3e09ee14df8                                                             |
+| device_owner          | compute:nova                                                                                     |
+| dns_assignment        | None                                                                                             |
+| dns_name              | None                                                                                             |
+| extra_dhcp_opts       | ip_version='4', opt_name='domain-search', opt_value='summit.example.com'                           |
+| fixed_ips             | ip_address='10.0.0.19', subnet_id='c9ac1bae-e44c-41e3-84b6-33991fa39ebe'                        |
+| id                    | de3cd481-28d5-42f8-b0ba-c10127a0e034                                                             |
+| ip_address            | None                                                                                             |
+| mac_address           | fa:16:3e:44:bc:6e                                                                                |
+| name                  | summit-dtx69-master-port-0                                                                         |
+| network_id            | 83e4f7b8-2d2a-44f7-9a3c-26698d698726                                                             |
+| option_name           | None                                                                                             |
+| option_value          | None                                                                                             |
+| port_security_enabled | True                                                                                             |
+| project_id            | 31cd4d29cf6c479d9a72784ff4e4ad3c                                                                 |
+| qos_policy_id         | None                                                                                             |
+| revision_number       | 14                                                                                               |
+| security_group_ids    | b560d600-c35a-4e42-8ca3-ebbd42af049a                                                             |
+| status                | ACTIVE                                                                                           |
+| subnet_id             | None                                                                                             |
+| tags                  | openshiftClusterID=summit-dtx69                                                                    |
+| trunk_details         | {u'trunk_id': u'a2986abe-19de-4585-a715-c50b6f581a61', u'sub_ports': []}                         |
+| updated_at            | 2019-08-27T14:50:54Z                                                                             |
++-----------------------+--------------------------------------------------------------------------------------------------+
+----
++
+[NOTE]
+Notice the field `allowed_address_pairs`
+
+. Check the floating IP indicated in the configuration
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack floating ip list
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+---------------------+------------------+--------------------------------------+--------------------------------------+----------------------------------+
+| ID                                   | Floating IP Address | Fixed IP Address | Port                                 | Floating Network                     | Project                          |
++--------------------------------------+---------------------+------------------+--------------------------------------+--------------------------------------+----------------------------------+
+| 3328127d-7b2c-44b4-a4f9-4353715a97ed | 192.0.2.50         | 10.0.0.13        | 0a373aa6-96d9-4927-9de2-a22e77bac3b8 | 42844de6-877b-45d1-a851-53838120334e | f8208bd072944d7f9d5f64b9181a386b |
+| 4846fee6-23da-42a7-a494-f39332855b61 | 192.0.2.70         | 10.0.0.5         | 76f0f8e3-9701-44cb-ac76-8ff8b6de8e58 | 42844de6-877b-45d1-a851-53838120334e | 6d6f875dd05240ba8ee773f2187f9c11 |
++--------------------------------------+---------------------+------------------+--------------------------------------+--------------------------------------+----------------------------------+
+----
+
+
+. List the Swift Container created
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack container list
+----
++
+.Sample Output
+[%nowrap]
+----
++------------+
+| Name       |
++------------+
+| summit-dtx69 |
++------------+
+----
+
+. Check the objects inside
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ CONTAINER=$(openstack container list -c Name -f value)
+(openshift) [stack@undercloud ~]$ openstack object list $CONTAINER
+----
++
+
+.Sample Output
+[%nowrap]
+----
++---------------+
+| Name          |
++---------------+
+| bootstrap.ign |
++---------------+
+----
++
+[NOTE]
+This file is going to be used by RHCOS during the ignition disks boot process.
+
+. Review the `bootstrap.ign` file
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack object save $CONTAINER bootstrap.ign --file -| jq "." | less
+----
+
+. Review the Terraform state
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ cd openshift
+(openshift) [stack@undercloud openshift]$ jq "." summit/terraform.tfstate
+----
++
+.Sample Output
+[%nowrap]
+----
+<<OMITTED>>
+  {
+      "instances": [
+        {
+          "attributes": {
+            "uid": null,
+            "source": null,
+            "path": "/etc/hostname",
+            "mode": 420,
+            "id": "a50ae36aff38e0bc7b3b3a121226bed00e9e54124bb94aac3659835c37da8ba4",
+            "gid": null,
+            "filesystem": "root",
+            "content": [
+              {
+                "mime": "text/plain",
+                "content": "summit-4vfvz-master-0\n"
+              }
+            ]
+          },
+          "schema_version": 0,
+          "index_key": 0
+        }
+      ],
+      "provider": "provider.ignition",
+      "each": "list",
+      "name": "hostname",
+      "type": "ignition_file",
+      "mode": "data",
+      "module": "module.masters"
+    },
+    {
+      "instances": [
+        {
+          "attributes": {
+            "vcpus": 8,
+            "swap": 0,
+            "rx_tx_factor": 1,
+            "region": null,
+            "ram": 16384,
+            "disk": 20,
+            "extra_specs": {},
+            "flavor_id": "9d6becda-d356-4e5d-a219-cb05f85c632c",
+            "id": "9d6becda-d356-4e5d-a219-cb05f85c632c",
+            "is_public": true,
+            "min_disk": null,
+            "min_ram": null,
+            "name": "m1.xlarge"
+          },
+          "schema_version": 0
+        }
+<<OMITTED>>
+----
+
+=== Check installation progress
+. Connect to the floating  IP of the bootstrap (this Floating IP will be assigned to the masters after bootstrap)
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ FIP=$(openstack floating ip list -c "Floating IP Address" -f value --fixed-ip 10.0.0.5 )
+(openshift) [stack@undercloud ~]$ ssh core@$FIP
+----
+. Review the bootstrap process
++
+[%nowrap]
+----
+[core@bootstrap ~]$  journalctl -b -f -u bootkube.service
+----
++
+.Sample Output
+[%nowrap]
+----
+Jun 28 09:47:06 bootstrap bootkube.sh[1380]: Starting etcd certificate signer...
+Jun 28 09:47:21 bootstrap bootkube.sh[1380]: ac65eb7db95182d365de5cc416bffb90ae923757c28ae84e156494afd18c9769
+Jun 28 09:47:21 bootstrap bootkube.sh[1380]: Waiting for etcd cluster...
+----
+
+. During the bootstrap the `openshift-install` output will show following messages:
++
+[%nowrap]
+----
+INFO Waiting up to 30m0s for the Kubernetes API at https://api.summit.example.com:6443...
+<OMITTED>>
+DEBUG Still waiting for the Kubernetes API: Get https://api.summit.example.com:6443/version?timeout=32s: dial tcp 192.0.2.70:6443: connect: no route to host
+DEBUG Still waiting for the Kubernetes API: Get https://api.summit.example.com:6443/version?timeout=32s: dial tcp 192.0.2.70:6443: connect: no route to host
+DEBUG Still waiting for the Kubernetes API: Get https://api.summit.example.com:6443/version?timeout=32s: dial tcp 192.0.2.70:6443: connect: no route to host
+DEBUG Still waiting for the Kubernetes API: the server could not find the requested resource
+<<OMITTED>>
+DEBUG Still waiting for the Kubernetes API: Get https://api.summit.example.com:6443/version?timeout=32s: dial tcp 192.0.2.70:6443: connect: connection refused
+
+----
+
+. The bootstrap VM will show the following message (example):
++
+[%nowrap]
+----
+Jun 28 09:52:29 bootstrap bootkube.sh[1380]: https://etcd-0.summit.example.com:2379 is healthy: successfully committed proposal: took = 3.178716ms
+Jun 28 09:52:29 bootstrap bootkube.sh[1380]: etcd cluster up. Killing etcd certificate signer...
+Jun 28 09:52:30 bootstrap bootkube.sh[1380]: ac65eb7db95182d365de5cc416bffb90ae923757c28ae84e156494afd18c9769
+Jun 28 09:52:30 bootstrap bootkube.sh[1380]: Starting cluster-bootstrap...
+Jun 28 09:52:35 bootstrap bootkube.sh[1380]: Starting temporary bootstrap control plane...
+<<OMITTED>>
+Jun 28 09:53:04 bootstrap bootkube.sh[1380]: Created "cluster-dns-02-config.yml" dnses.v1.config.openshift.io/cluster -n
+Jun 28 09:53:04 bootstrap bootkube.sh[1380]: Created "cluster-infrastructure-02-config.yml" infrastructures.v1.config.openshift.io/cluster -n
+Jun 28 09:53:04 bootstrap bootkube.sh[1380]: Created "cluster-ingress-02-config.yml" ingresses.v1.config.openshift.io/cluster -n
+Jun 28 09:53:04 bootstrap bootkube.sh[1380]: Created "cluster-network-02-config.yml" networks.v1.config.openshift.io/cluster -n
+Jun 28 09:53:05 bootstrap bootkube.sh[1380]: Created "cluster-proxy-01-config.yaml" proxies.v1.config.openshift.io/cluster -n
+Jun 28 09:53:05 bootstrap bootkube.sh[1380]:         Pod Status:openshift-kube-apiserver/kube-apiserver        DoesNotExist
+Jun 28 09:53:05 bootstrap bootkube.sh[1380]:         Pod Status:openshift-kube-scheduler/openshift-kube-scheduler        DoesNotExist
+Jun 28 09:53:05 bootstrap bootkube.sh[1380]:         Pod Status:openshift-kube-controller-manager/kube-controller-manager        DoesNotExist
+Jun 28 09:53:05 bootstrap bootkube.sh[1380]:         Pod Status:openshift-cluster-version/cluster-version-operator        Pending
+Jun 28 09:53:05 bootstrap bootkube.sh[1380]: Created "cvo-overrides.yaml" clusterversions.v1.config.openshift.io/version -n openshift-cluster-version
+----
+
+
+. Open a new session to `undercloud` and create file `.ssh/config` using the FIP as jump host
++
+.Content
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ cat > ~/.ssh/config <<EOF
+Host 10.0.*.*
+  ProxyJump core@$FIP
+EOF
+(openshift) [stack@undercloud ~]$ chmod 640 ~/.ssh/config
+----
+
+. At this moment we have to wait till the bootstrap finishes. During this wait, open a new terminal and connect to master node
++
+[%nowrap]
+----
+
+(openshift) [stack@undercloud ~]$ openstack server ssh --private $(openstack server list --name master -c Name -f value) -l core
+----
+
+. List the CRI-O pods inside the master
++
+[%nowrap]
+----
+[core@master-0 ~]$ sudo -i
+[root@master-0 ~]# crictl pods ps
+----
++
+.Sample Output
+[%nowrap]
+----
+POD ID              CREATED             STATE               NAME                                 NAMESPACE             ATTEMPT
+050c77479fa42       2 minutes ago       Ready               haproxy-summit-dtx69-master-0          openshift-kni-infra   0
+94ae1d12e1364       2 minutes ago       Ready               keepalived-summit-dtx69-master-0       openshift-kni-infra   0
+006799285b12a       2 minutes ago       Ready               mdns-publisher-summit-dtx69-master-0   openshift-kni-infra   0
+94981f6fa3254       2 minutes ago       Ready               etcd-member-summit-dtx69-master-0      openshift-etcd        0
+3bbed54314720       2 minutes ago       Ready               coredns-summit-dtx69-master-0          openshift-kni-infra   0
+----
+
+Wait till the `network-operator` POD appears on the `crictl ps` output.
+
+. Review the `tun0` device
++
+[%nowrap]
+----
+[root@summit-dtx69-master-0 ~]# ip a s dev tun0
+----
++
+.Sample Output
+[%nowrap]
+----
+6: tun0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1400 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether ee:02:36:2c:56:9d brd ff:ff:ff:ff:ff:ff
+    inet 10.128.0.1/23 brd 10.128.1.255 scope global tun0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::ec02:36ff:fe2c:569d/64 scope link
+       valid_lft forever preferred_lft forever
+----
++
+[NOTE]
+IP Corresponds to the OCP Cluster network
+
+. Review Multus configuration
++
+[%nowrap]
+----
+[root@master-0 ~]# cat /etc/kubernetes/cni/net.d/00-multus.conf  | jq "."
+----
++
+.Sample Output
+[%nowrap]
+----
+{
+  "cniVersion": "0.3.1",
+  "name": "multus-cni-network",
+  "type": "multus",
+  "namespaceIsolation": true,
+  "logLevel": "verbose",
+  "binDir": "/opt/multus/bin",
+  "kubeconfig": "/etc/kubernetes/cni/net.d/multus.d/multus.kubeconfig",
+  "delegates": [
+    {
+      "cniVersion": "0.3.1",
+      "name": "openshift-sdn",
+      "type": "openshift-sdn"
+    }
+  ]
+}
+----
+
+. Check the `cloud.conf` file
++
+[%nowrap]
+----
+[root@master-0 kubernetes]# cat /etc/kubernetes/cloud.conf
+----
++
+.Expected Output
+[%nowrap]
+----
+[Global]
+secret-name = openstack-credentials
+secret-namespace = kube-system
+----
++
+[NOTE]
+OpenStack credentials are stored as a secret.
+
+You can run `journalctl -f` to see the installation/configuration progress on the master node.
+
+
+On our `bootstrap` VM you can observe the progress of the required pods creation
+[%nowrap]
+----
+Jun 28 10:01:50 bootstrap bootkube.sh[1380]:         Pod Status:openshift-kube-apiserver/kube-apiserver        DoesNotExist
+Jun 28 10:01:50 bootstrap bootkube.sh[1380]:         Pod Status:openshift-kube-scheduler/openshift-kube-scheduler        DoesNotExist
+Jun 28 10:01:50 bootstrap bootkube.sh[1380]:         Pod Status:openshift-kube-controller-manager/kube-controller-manager        Pending
+Jun 28 10:01:50 bootstrap bootkube.sh[1380]:         Pod Status:openshift-cluster-version/cluster-version-operator        Ready
+Jun 28 10:01:55 bootstrap bootkube.sh[1380]:         Pod Status:openshift-cluster-version/cluster-version-operator        Ready
+----
+
+After some minutes the process will finish.
+[%nowrap]
+----
+Jun 28 10:04:32 bootstrap bootkube.sh[1380]: Skipped "secret-kube-apiserver-to-kubelet-signer.yaml" secrets.v1./kube-apiserver-to-kubelet-signer -n openshift-kube-apiserver-operator as it already exists
+Jun 28 10:04:32 bootstrap bootkube.sh[1380]: Skipped "secret-loadbalancer-serving-signer.yaml" secrets.v1./loadbalancer-serving-signer -n openshift-kube-apiserver-operator as it already exists
+Jun 28 10:04:32 bootstrap bootkube.sh[1380]: Skipped "secret-localhost-serving-signer.yaml" secrets.v1./localhost-serving-signer -n openshift-kube-apiserver-operator as it already exists
+Jun 28 10:04:33 bootstrap bootkube.sh[1380]: Skipped "secret-service-network-serving-signer.yaml" secrets.v1./service-network-serving-signer -n openshift-kube-apiserver-operator as it already exists
+Jun 28 10:04:33 bootstrap bootkube.sh[1380]: bootkube.service complete
+----
+
+[IMPORTANT]
+When the bootstrap process this VM will be deleted and your connection will be frozen. Open a new connection when this happens. Floating IP will be assigned to the master node.
+
+
+Output of the `openshift-install` command will show the following output:
+[%nowrap]
+----
+DEBUG Bootstrap status: complete
+INFO Destroying the bootstrap resources...
+<<OMITTED>>
+DEBUG
+DEBUG Destroy complete! Resources: 3 destroyed.
+INFO Waiting up to 30m0s for the cluster at https://api.summit.example.com:6443 to initialize...
+DEBUG Still waiting for the cluster to initialize: Working towards 4.3.1: 85% complete
+----
++
+[IMPORTANT]
+Ignore errors similar to "Could not update servicemonitor" warnings.
+
+
+At this moment we can see the installation progress.
+
+. Configure `KUBECONFIG` environment variable and check status
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ echo "export KUBECONFIG=/home/stack/openshift/summit/auth/kubeconfig" >> ~/.bashrc
+(openshift) [stack@undercloud openshift]$ source ~/.bashrc
+(openshift) [stack@undercloud openshift]$ oc whoami
+(openshift) [stack@undercloud openshift]$ oc get clusterversion
+----
++
+.Sample Output
+[%nowrap]
+----
+NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
+version             False       True          17m     Working towards 4.3.1: 91% complete
+----
++
+[Important]
+Ignore the message in STATUS if is "Unable to apply 4.3.1: some cluster operators have not yet rolled out"
+
+
+. List the cluster operators and the status
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ oc get clusteroperator
+----
++
+.Sample Output
+[%nowrap]
+----
+NAME                                       VERSION                         AVAILABLE   PROGRESSING   DEGRADED   SINCE
+authentication                                                             Unknown     Unknown       True       5m58s
+cloud-credential                           4.3.1   True        False         False      12m
+cluster-autoscaler                         4.3.1   True        False         False      8m22s
+console                                    4.3.1   True        True          False      4m21s
+dns                                        4.3.1   True        False         False      9m39s
+image-registry                                                             False       True          False      105s
+ingress                                    unknown                         False       True          False      103s
+kube-apiserver                             4.3.1   True        True          False      8m37s
+kube-controller-manager                    4.3.1   True        True          False      7m28s
+kube-scheduler                             4.3.1   True        True          False      6m38s
+machine-api                                4.3.1   True        False         False      12m
+machine-config                             4.3.1   True        False         False      9m11s
+marketplace                                4.3.1   True        False         False      67s
+monitoring                                                                 False       True          True       1s
+network                                    4.3.1   True        False         False      13m
+node-tuning                                4.3.1   True        False         False      4m57s
+openshift-apiserver                        4.3.1   False       False         False      103s
+openshift-controller-manager               4.3.1   True        False         False      9m1s
+openshift-samples                                                          False       False         False      104s
+operator-lifecycle-manager                 4.3.1   True        True          False      8m26s
+operator-lifecycle-manager-catalog         4.3.1   True        True          False      8m26s
+operator-lifecycle-manager-packageserver                                   False       True          False      8m26s
+service-ca                                 4.3.1   True        False         False      12m
+service-catalog-apiserver                  4.3.1   True        False         False      5m57s
+service-catalog-controller-manager         4.3.1   True        False         False      5m57s
+storage                                    4.3.1   True        False         False      107s
+support                                    4.3.1   True        False         False      12m
+----
+
+
+After some minutes the installation will finish.
+
+[%nowrap]
+----
+DEBUG Cluster is initialized
+INFO Waiting up to 10m0s for the openshift-console route to be created...
+DEBUG Route found in openshift-console namespace: console
+DEBUG Route found in openshift-console namespace: downloads
+DEBUG OpenShift console route is created
+INFO Install complete!
+INFO To access the cluster as the system:admin user when using 'oc', run 'export KUBECONFIG=/home/stack/src/github.com/openshift/installer/summit/auth/kubeconfig'
+INFO Access the OpenShift web-console here: https://console-openshift-console.apps.summit.example.com
+INFO Login to the console with user: kubeadmin, password: JhDR4-uWKhc-mRQtH-Vde37
+
+real	43m8.507s
+user	0m39.151s
+sys	0m2.511s
+----
+
+
+A new VM was created during the OpenShift installation
+
+. Review new VM
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ openstack server list --name worker
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+-------------------------+--------+---------------------------------+-------+-----------+
+| ID                                   | Name                    | Status | Networks                        | Image | Flavor    |
++--------------------------------------+-------------------------+--------+---------------------------------+-------+-----------+
+| 663cbaaa-e28f-4d74-9918-ca4a29e933c1 | summit-dtx69-worker-smnfb | ACTIVE | summit-dtx69-openshift=10.0.0.14 | rhcos | m1.xlarge |
++--------------------------------------+-------------------------+--------+---------------------------------+-------+-----------+
+----
+
+. Review the OC nodes
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ oc get nodes
+----
++
+.Sample Output
+[%nowrap]
+----
+NAME                      STATUS   ROLES    AGE     VERSION
+summit-dtx69-master-0       Ready    master   32m     v1.14.0+f62c70b01
+summit-dtx69-worker-smnfb   Ready    worker   3m15s   v1.14.0+f62c70b01
+----
+

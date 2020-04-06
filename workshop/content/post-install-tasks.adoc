@@ -1,0 +1,260 @@
+:scrollbar:
+:data-uri:
+:toc2:
+:USER_GUID: %GUID%
+:USERNAME: %user%
+:CLUSTER: %cluster%
+
+== Post Installation Tasks
+
+. Create a floating IP for the applications
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack floating ip create public --tag apps
+----
++
+.Sample Output
+[%nowrap]
+----
++---------------------+--------------------------------------+
+| Field               | Value                                |
++---------------------+--------------------------------------+
+| created_at          | 2019-08-27T15:35:13Z                 |
+| description         |                                      |
+| fixed_ip_address    | None                                 |
+| floating_ip_address | 192.0.2.71                           |
+| floating_network_id | 5c643728-f13d-4e4d-853d-865b76d45027 |
+| id                  | 3603c571-556b-476c-bafb-f34faa2e1b8b |
+| name                | 192.0.2.71                           |
+| port_id             | None                                 |
+| project_id          | 31cd4d29cf6c479d9a72784ff4e4ad3c     |
+| qos_policy_id       | None                                 |
+| revision_number     | 0                                    |
+| router_id           | None                                 |
+| status              | DOWN                                 |
+| subnet_id           | None                                 |
+| updated_at          | 2019-08-27T15:35:13Z                 |
+| tags                | ['apps']                             |
++---------------------+--------------------------------------+
+----
+
+. Check the port for `ingress`
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack port list  |grep --color=never -e "--" -e Name -e ingress-port
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+--------------------------+-------------------+----------------------------------------------------------------------------+--------+
+| ID                                   | Name                     | MAC Address       | Fixed IP Addresses                                                         | Status |
++--------------------------------------+--------------------------+-------------------+----------------------------------------------------------------------------+--------+
+| 6e7cbda6-7462-4f38-810d-3f30359e4e46 | summit-dtx69-ingress-port  | fa:16:3e:a3:8d:09 | ip_address='10.0.0.7', subnet_id='c9ac1bae-e44c-41e3-84b6-33991fa39ebe'   | DOWN   |
++--------------------------------------+--------------------------+-------------------+----------------------------------------------------------------------------+--------+
+----
+. Assign floating IP to the port
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ PORTINGRESS=$(openstack port list  |grep --color=never ingress-port | awk '{print $2}')
+(openshift) [stack@undercloud ~]$ FIPINGRESS=$(openstack floating ip list --tags apps -c "Floating IP Address" -f value)
+(openshift) [stack@undercloud ~]$ openstack floating ip set --port $PORTINGRESS $FIPINGRESS
+----
+
+. Register IP to be used as wildcard for applications
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ curl "http://classroom.example.com:8080/update?secret=redhat&domain=*.apps&addr=$FIPINGRESS"
+----
++
+.Sample Output
+[%nowrap]
+----
+{"Success":true,"Message":"Updated A record for *.apps to IP address 192.0.2.76","Domain":"*.apps","Domains":["*.apps"],"Address":"192.0.2.76","AddrType":"A"}
+----
+
+. Test DNS record
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ dig +short test.apps.summit.example.com
+192.0.2.76
+----
+
+
+
+== Check cluster health
+
+. Check cluster version
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc get clusterversion
+----
++
+.Sample Output
+[%nowrap]
+----
+NAME      VERSION                         AVAILABLE   PROGRESSING   SINCE   STATUS
+version   4.3.1   True        False         41s     Cluster version is 4.3.1
+----
++
+[TIP]
+It may take up to 10 minutes to display the  Cluster version number
+
+. Check the `Machines`
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc get machine -n openshift-machine-api
+----
++
+.Sample Output
+[%nowrap]
+----
+NAME                      STATE    TYPE        REGION   ZONE   AGE
+summit-dtx69-master-0       ACTIVE   m1.xlarge            nova   38m
+summit-dtx69-worker-smnfb   ACTIVE   m1.xlarge            nova   36m
+----
+
+You can get the information of the machines using `oc get machine -n openshift-machine-api  -o yaml`
+
+
+== Test basic functionality
+
+Now is time to test the basic functionality: create an app.
+
+. Create a new project named `summit`
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc new-project summit
+----
++
+.Sample Output
+[%nowrap]
+----
+Now using project "summit" on server "https://api.summit.example.com:6443".
+
+You can add applications to this project with the 'new-app' command. For example, try:
+
+    oc new-app django-psql-example
+
+to build a new example application in Python. Or use kubectl to deploy a simple Kubernetes application:
+
+    kubectl create deployment hello-node --image=gcr.io/hello-minikube-zero-install/hello-node
+----
+. Create a new sample apps
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ oc new-app django-psql-example
+----
++
+.Sample Output
+[%nowrap]
+----
+<<OMITTED>>
+--> Creating resources ...
+    secret "django-psql-example" created
+    service "django-psql-example" created
+    route.route.openshift.io "django-psql-example" created
+    imagestream.image.openshift.io "django-psql-example" created
+    buildconfig.build.openshift.io "django-psql-example" created
+    deploymentconfig.apps.openshift.io "django-psql-example" created
+    service "postgresql" created
+    deploymentconfig.apps.openshift.io "postgresql" created
+--> Success
+    Access your application via route 'django-psql-example-summit.apps.summit.example.com'
+    Build scheduled, use 'oc logs -f bc/django-psql-example' to track its progress.
+    Run 'oc status' to view your app.
+----
+
+. Check the status
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ watch oc status
+----
++
+.Sample Output
+[%nowrap]
+----
+In project summit on server https://api.summit.example.com:6443
+
+http://django-psql-example-summit.apps.summit.example.com (svc/django-psql-example)
+  dc/django-psql-example deploys istag/django-psql-example:latest <-
+    bc/django-psql-example source builds https://github.com/sclorg/django-ex.git on openshift/python:3.6
+      build #1 running for 42 seconds - 0905223: Merge pull request #137 from danmcp/patch-1 (Ben Parees <bparees@users.noreply.github.com>)
+    deployment #1 waiting on image or update
+
+svc/postgresql - 172.30.174.52:5432
+  dc/postgresql deploys openshift/postgresql:10
+    deployment #1 waiting on image or update
+
+View details with 'oc describe <resource>/<name>' or list everything with 'oc get all'.
+----
++
+Wait till the process have finished.
+
+. Access to the application
++
+[%nowrap]
+----
+(openshift) [stack@undercloud openshift]$ curl -s django-psql-example-summit.apps.summit.example.com | grep title
+----
++
+[%nowrap]
+----
+  <title>Welcome to OpenShift</title>
+----
+
+
+. Add a `PersistentVolume` to the application.
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc set volume dc/django-psql-example --add --name=cinderexample -t pvc --claim-size=1G 
+----
++
+.Sample Output
+[%nowrap]
+----
+deploymentconfig.apps.openshift.io/django-psql-example volume updated
+----
+
+. List the `PersistentVolumeClaim` objects
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ oc get pvc
+NAME        STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+pvc-rfjq5   Bound    pvc-8628accb-117c-4f93-8604-d6de8f1cac20   1Gi        RWO            standard       43s
+----
+
+. List the `PersistentVolume` objects
++
+[%nowrap]
+----
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM              STORAGECLASS   REASON   AGE
+pvc-8628accb-117c-4f93-8604-d6de8f1cac20   1Gi        RWO            Delete           Bound    summit/pvc-rfjq5   standard                87s
+----
+
+. List the OpenStack volumes
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack volume list
++--------------------------------------+---------------------------------------------------------------+--------+------+----------------------------------------------------+
+| ID                                   | Name                                                          | Status | Size | Attached to                                        |
++--------------------------------------+---------------------------------------------------------------+--------+------+----------------------------------------------------+
+| 1262ac2f-7087-42db-9944-1b36c54b45df | summit-z2lph-dynamic-pvc-8628accb-117c-4f93-8604-d6de8f1cac20 | in-use |    1 | Attached to summit-z2lph-worker-dj85b on /dev/vdb  |
++--------------------------------------+---------------------------------------------------------------+--------+------+----------------------------------------------------+
+----
+
+
+

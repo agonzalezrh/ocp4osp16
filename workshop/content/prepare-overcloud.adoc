@@ -1,0 +1,387 @@
+:scrollbar:
+:data-uri:
+:toc2:
+:ssh_access: %ssh_access%
+:ssh_password: %ssh_password%
+
+== Overcloud preparation
+
+In this section overcloud will be configured:
+
+* Create a `public` network and subnet for floating ips.
+* Create required flavor
+* Create a image named `rhcos`
+* Create a project named `openshift`
+* Create an user named `openshift_admin` and assign role.
+* Configure Swift permissions
+
+
+=== Configure network and subnet
+
+. Connect to your environment
+[%nowrap]
+----
+[~] $ ssh %ssh_access%
+----
++
+Your password is `%ssh_password%`
+
+. Connect to `undercloud` (password is `r3dh4t1!` for user `stack`)
++
+.[Workstation]
+[%nowrap]
+----
+[student@workstation ~]$ ssh stack@undercloud.example.com
+----
+
+. Create network `public` as external network
++
+[%nowrap]
+----
+[stack@undercloud ~]$ . overcloudrc
+(overcloud) [stack@undercloud ~]$ openstack network create --provider-network-type flat --provider-physical-network datacentre public --external --share
+----
++
+.Sample Output
+[%nowrap]
+----
++---------------------------+--------------------------------------+
+| Field                     | Value                                |
++---------------------------+--------------------------------------+
+| admin_state_up            | UP                                   |
+| availability_zone_hints   |                                      |
+| availability_zones        |                                      |
+| created_at                | 2019-06-28T08:13:26Z                 |
+| description               |                                      |
+| dns_domain                | None                                 |
+| id                        | 725b7803-45f2-4acd-992d-fa8a1fee28ec |
+| ipv4_address_scope        | None                                 |
+| ipv6_address_scope        | None                                 |
+| is_default                | False                                |
+| is_vlan_transparent       | None                                 |
+| mtu                       | 1500                                 |
+| name                      | public                               |
+| port_security_enabled     | True                                 |
+| project_id                | 6d6f875dd05240ba8ee773f2187f9c11     |
+| provider:network_type     | flat                                 |
+| provider:physical_network | datacentre                           |
+| provider:segmentation_id  | None                                 |
+| qos_policy_id             | None                                 |
+| revision_number           | 6                                    |
+| router:external           | External                             |
+| segments                  | None                                 |
+| shared                    | True                                 |
+| status                    | ACTIVE                               |
+| subnets                   |                                      |
+| tags                      |                                      |
+| updated_at                | 2019-06-28T08:13:26Z                 |
++---------------------------+--------------------------------------+
+----
+
+. Create subnet `public_subnet` to be used for floating IP
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack subnet create --no-dhcp --gateway 192.0.2.254 --subnet-range 192.0.2.0/24 --allocation-pool start=192.0.2.50,end=192.0.2.90 --network public public_subnet
+----
++
+.Sample Output
+[%nowrap]
+----
++-------------------+--------------------------------------+
+| Field             | Value                                |
++-------------------+--------------------------------------+
+| allocation_pools  | 192.0.2.50-192.0.2.90                |
+| cidr              | 192.0.2.0/24                         |
+| created_at        | 2019-06-28T08:14:53Z                 |
+| description       |                                      |
+| dns_nameservers   |                                      |
+| enable_dhcp       | False                                |
+| gateway_ip        | 192.0.2.254                          |
+| host_routes       |                                      |
+| id                | e39a115e-c4c4-45cd-8653-4446cb5e8069 |
+| ip_version        | 4                                    |
+| ipv6_address_mode | None                                 |
+| ipv6_ra_mode      | None                                 |
+| name              | public_subnet                        |
+| network_id        | 725b7803-45f2-4acd-992d-fa8a1fee28ec |
+| project_id        | 6d6f875dd05240ba8ee773f2187f9c11     |
+| revision_number   | 0                                    |
+| segment_id        | None                                 |
+| service_types     |                                      |
+| subnetpool_id     | None                                 |
+| tags              |                                      |
+| updated_at        | 2019-06-28T08:14:53Z                 |
++-------------------+--------------------------------------+
+----
+
+
+=== Create flavor `m1.xlarge` and `m1.large`, create image `rhcos`
+
+. Create flavor `m1.xlarge` with 8vcpu and 16GB of RAM for the controllers.
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack flavor create --ram 16384 --disk 20 --vcpu 8 --public m1.xlarge
+----
++
+[%nowrap]
+----
++----------------------------+--------------------------------------+
+| Field                      | Value                                |
++----------------------------+--------------------------------------+
+| OS-FLV-DISABLED:disabled   | False                                |
+| OS-FLV-EXT-DATA:ephemeral  | 0                                    |
+| disk                       | 20                                   |
+| id                         | 6817178e-102e-4440-8897-b381df52311d |
+| name                       | m1.xlarge                            |
+| os-flavor-access:is_public | True                                 |
+| properties                 |                                      |
+| ram                        | 16384                                |
+| rxtx_factor                | 1.0                                  |
+| swap                       |                                      |
+| vcpus                      | 8                                    |
++----------------------------+--------------------------------------+
+----
+
+. Create flavor `m1.large` with 4vcpu and 10GB of RAM for the workers.
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack flavor create --ram 10240 --disk 20 --vcpu 4 --public m1.large
+----
++
+[%nowrap]
+----
++----------------------------+--------------------------------------+
+| Field                      | Value                                |
++----------------------------+--------------------------------------+
+| OS-FLV-DISABLED:disabled   | False                                |
+| OS-FLV-EXT-DATA:ephemeral  | 0                                    |
+| disk                       | 20                                   |
+| id                         | 2326ff2f-9ce1-4110-a587-5745cba517d6 |
+| name                       | m1.large                             |
+| os-flavor-access:is_public | True                                 |
+| properties                 |                                      |
+| ram                        | 10240                                |
+| rxtx_factor                | 1.0                                  |
+| swap                       |                                      |
+| vcpus                      | 4                                    |
++----------------------------+--------------------------------------+
+----
+
+
+=== Create project for openshift, user and assign permissions
+
+. Create project named `openshift`
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack project create openshift
+----
++
+.Sample Output
+[%nowrap]
+----
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | default                          |
+| enabled     | True                             |
+| id          | d4ca6cd93855497c90abb074aef473b5 |
+| is_domain   | False                            |
+| name        | openshift                        |
+| parent_id   | default                          |
+| tags        | []                               |
++-------------+----------------------------------+
+----
+
+. Set quota for the project (here we set unlimited ram and cores)
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack quota set --ram -1 --cores -1 openshift
+----
+
+. Create an user named `openshift_admin`
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack user create --password 'r3dh4t1!' openshift_admin
+----
++
+.Sample Output
+[%nowrap]
+----
++---------------------+----------------------------------+
+| Field               | Value                            |
++---------------------+----------------------------------+
+| domain_id           | default                          |
+| enabled             | True                             |
+| id                  | fe344863375f49d19bc8cb6023042cbd |
+| name                | openshift_admin                  |
+| options             | {}                               |
+| password_expires_at | None                             |
++---------------------+----------------------------------+
+----
+
+. Assign _member_ role to the user in the project
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack role add --project openshift --user openshift_admin _member_
+----
++
+[NOTE]
+This command doesn't show any output when is executed correctly.
+
+. Assign swiftoperator role to the user in the project
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack role add --user openshift_admin --project openshift swiftoperator
+----
+
+. Create file `openshiftrc` to test authentication
++
+.Content
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ cat > openshiftrc <<\EOF
+for key in $( set | awk '{FS="="}  /^OS_/ {print $1}' ); do unset $key ; done
+export OS_NO_CACHE=True
+export COMPUTE_API_VERSION=1.1
+export OS_USERNAME=openshift_admin
+export no_proxy=,192.0.2.102,192.0.2.102
+export OS_USER_DOMAIN_NAME=Default
+export OS_VOLUME_API_VERSION=3
+export OS_CLOUDNAME=openshift
+export OS_AUTH_URL=http://192.0.2.21:5000//v3
+export NOVA_VERSION=1.1
+export OS_IMAGE_API_VERSION=2
+export OS_PASSWORD=r3dh4t1!
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_IDENTITY_API_VERSION=3
+export OS_PROJECT_NAME=openshift
+export OS_AUTH_TYPE=password
+export PYTHONWARNINGS="ignore:Certificate has no, ignore:A true SSLContext object is not available"
+
+# Add OS_CLOUDNAME to PS1
+if [ -z "${CLOUDPROMPT_ENABLED:-}" ]; then
+    export PS1=${PS1:-""}
+    export PS1=${OS_CLOUDNAME:+"($OS_CLOUDNAME)"}\ $PS1
+    export CLOUDPROMPT_ENABLED=1
+fi
+EOF
+----
+
+. Test authentication
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ . openshiftrc
+(openshift) [stack@undercloud ~]$ openstack network list
+----
++
+.Sample Output
+[%nowrap]
+----
++--------------------------------------+--------+--------------------------------------+
+| ID                                   | Name   | Subnets                              |
++--------------------------------------+--------+--------------------------------------+
+| 725b7803-45f2-4acd-992d-fa8a1fee28ec | public | e39a115e-c4c4-45cd-8653-4446cb5e8069 |
++--------------------------------------+--------+--------------------------------------+
+----
+
+
+. Create a floating IP
++
+[%nowrap]
+----
+(overcloud) [stack@undercloud ~]$ openstack floating ip create public
+----
++
+.Sample Output
+[%nowrap]
+----
++---------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Field               | Value                                                                                                                                                                                 |
++---------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| created_at          | 2020-02-24T09:28:50Z                                                                                                                                                                  |
+| description         |                                                                                                                                                                                       |
+| dns_domain          |                                                                                                                                                                                       |
+| dns_name            |                                                                                                                                                                                       |
+| fixed_ip_address    | None                                                                                                                                                                                  |
+| floating_ip_address | 192.0.2.70                                                                                                                                                                            |
+| floating_network_id | 41c71dd5-6f24-4de1-aea3-7cf2ddccbeed                                                                                                                                                  |
+| id                  | 7b5a17bc-2ace-4805-9918-93203aca6315                                                                                                                                                  |
+| location            | Munch({'cloud': '', 'region_name': '', 'zone': None, 'project': Munch({'id': '427c1fb25e4a4401bf4e0cde048738a9', 'name': 'openshift', 'domain_id': None, 'domain_name': 'Default'})}) |
+| name                | 192.0.2.84                                                                                                                                                                            |
+| port_details        | None                                                                                                                                                                                  |
+| port_id             | None                                                                                                                                                                                  |
+| project_id          | 427c1fb25e4a4401bf4e0cde048738a9                                                                                                                                                      |
+| qos_policy_id       | None                                                                                                                                                                                  |
+| revision_number     | 0                                                                                                                                                                                     |
+| router_id           | None                                                                                                                                                                                  |
+| status              | DOWN                                                                                                                                                                                  |
+| subnet_id           | None                                                                                                                                                                                  |
+| tags                | []                                                                                                                                                                                    |
+| updated_at          | 2020-02-24T09:28:50Z                                                                                                                                                                  |
++---------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+
+. Add DNS record to point to the new Floating IP
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ FIP=$(openstack floating ip list -c "Floating IP Address" -f value)
+(openshift) [stack@undercloud ~]$ curl "http://classroom.example.com:8080/update?secret=redhat&domain=api&addr=$FIP"
+----
++
+.Expected Output
+[%nowrap]
+----
+{"Success":true,"Message":"Updated A record for api to IP address 192.0.2.88","Domain":"api","Domains":["api"],"Address":"192.0.2.88","AddrType":"A"}
+----
+
+. Ensure the DNS record is working properly
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ sudo yum install -y bind-utils
+(openshift) [stack@undercloud ~]$ dig +short api.summit.example.com
+192.0.2.88
+----
+
+
+. Set temporary url key for `openshift_admin` account. This is used by Swift when we generate a temporary public URL for files.
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack object store account set --property Temp-URL-Key=summitTempKey
+----
+. Ensure the temporary key is set
++
+[%nowrap]
+----
+(openshift) [stack@undercloud ~]$ openstack object store account show
+----
++
+.Sample Output
+[%nowrap]
+----
++------------+---------------------------------------+
+| Field      | Value                                 |
++------------+---------------------------------------+
+| Account    | AUTH_d4ca6cd93855497c90abb074aef473b5 |
+| Bytes      | 0                                     |
+| Containers | 0                                     |
+| Objects    | 0                                     |
+| properties | Temp-Url-Key='summitTempKey'            |
++------------+---------------------------------------+
+----
+
+
+
+

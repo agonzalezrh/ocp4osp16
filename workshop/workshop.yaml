@@ -1,5 +1,11 @@
-name: OpenShift 4.3 on Red Hat OpenStack 16
+name: OpenShift 4.3 on Red Hat OpenStack 16.0
 
 modules:
     activate:
-    - exercises
+    - overview
+    - prepare-overcloud
+    - install-openshift
+    - review-installation
+    - post-install-tasks
+    - manage-openshift
+ 
