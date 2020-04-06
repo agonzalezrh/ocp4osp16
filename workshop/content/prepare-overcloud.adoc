@@ -1,8 +1,8 @@
 :scrollbar:
 :data-uri:
 :toc2:
-:ssh_access: %ssh_access%
-:ssh_password: %ssh_password%
+:student_ssh_command: %student_ssh_command%
+:student_ssh_password: %student_ssh_password%
 
 == Overcloud preparation
 
@@ -21,7 +21,7 @@ In this section overcloud will be configured:
 . Connect to your environment
 [%nowrap]
 ----
-[~] $ ssh %ssh_access%
+[~] $ %student_ssh_command%
 ----
 +
 Your password is `%ssh_password%`
